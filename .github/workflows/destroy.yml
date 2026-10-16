@@ -1,0 +1,63 @@
+name: "GitOps - Cloud Destroy"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Select the Terraform workspace to destroy"
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: eu-west-1
+  TF_VERSION: "1.16.2"
+
+jobs:
+  terraform-destroy:
+    name: "Destroy Selected Workspace Infrastructure"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./application-infra
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials Using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::951614974272:role/sidra-github-actions-oidc-execution-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Initialize Terraform Backend
+        run: terraform init -input=false
+
+      - name: Select Target Workspace
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          terraform workspace select "$TARGET_ENVIRONMENT"
+          echo "Selected workspace: $(terraform workspace show)"
+
+      - name: Destroy Workspace Infrastructure
+        env:
+          TF_VAR_db_password: ${{ secrets.RDS_DB_PASSWORD }}
+        run: terraform destroy -input=false -auto-approve

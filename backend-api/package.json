@@ -1,0 +1,16 @@
+{
+  "name": "aws-fargate-fullstack-backend",
+  "version": "1.0.0",
+  "description": "Enterprise Node.js Stateful Microservice API Server Engine",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mysql2": "^3.9.7"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

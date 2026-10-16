@@ -1,0 +1,80 @@
+name: "GitOps - Security Plan"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Select Target Infrastructure Environment"
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: eu-west-1
+  TF_VERSION: "1.16.2"
+
+jobs:
+  terraform-plan:
+    name: "Security Audit and Terraform Plan"
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./application-infra
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Run Checkov Security Scan
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: ./application-infra
+          framework: terraform
+          output_format: cli
+          soft_fail: true
+
+      - name: Configure AWS Credentials Using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::951614974272:role/sidra-github-actions-oidc-execution-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Initialize Terraform
+        run: terraform init -input=false
+
+      - name: Select or Create Workspace
+        env:
+          TF_WORKSPACE: ${{ inputs.environment }}
+        run: |
+          terraform workspace select "$TF_WORKSPACE" ||
+            terraform workspace new "$TF_WORKSPACE"
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Generate Terraform Plan
+        env:
+          TF_VAR_db_password: ${{ secrets.RDS_DB_PASSWORD }}
+        run: |
+          terraform plan \
+            -input=false \
+            -no-color \
+            -var='container_image=nginx:stable-alpine'

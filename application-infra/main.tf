@@ -314,11 +314,6 @@ resource "aws_db_instance" "fullstack_rds" {
 # ============================================================================
 # PHASE 5.3: RDS DATABASE OUTPUT
 # ============================================================================
-output "rds_endpoint_address" {
-  value       = aws_db_instance.fullstack_rds.endpoint
-  description = "The endpoint address and port of the private MySQL database"
-}
-
 resource "aws_instance" "fullstack_private_vm" {
   ami                    = var.private_instance_ami
   instance_type          = local.current_instance_type

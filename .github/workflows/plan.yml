@@ -60,10 +60,15 @@ jobs:
       - name: "Initialize S3 Remote Backend Storage Link"
         run: terraform init -input=false
 
-      - name: "Select Active Workspace Corridor"
+            # 🔄 UPGRADED: Removed the conflicting env: TF_WORKSPACE wrapper completely!
+      - name: "Select or Create Workspace Environment"
         env:
           TF_WORKSPACE: ${{ inputs.environment }}
-        run: terraform workspace select "$TF_WORKSPACE" || terraform workspace new "$TF_WORKSPACE"
+        run: |
+          if ! terraform workspace select "${{ inputs.environment }}"; then
+            terraform workspace new "${{ inputs.environment }}"
+          fi
+
 
       - name: "Execute System Semantics Validation Matrix"
         run: terraform validate

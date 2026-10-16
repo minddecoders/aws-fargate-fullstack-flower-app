@@ -176,14 +176,11 @@ jobs:
       - name: Initialize Terraform
         run: terraform init -input=false
 
-            # 🔄 UPGRADED: Completely cleaned of env overrides to keep your pipelines clear!
-      - name: "Select or Create Isolated Workspace Sandbox Corridor"
+      - name: Select or Create Terraform Workspace
+        env:
+          TF_WORKSPACE: ${{ inputs.environment }}
         run: |
-          if ! terraform workspace select "${{ inputs.environment }}"; then
-            terraform workspace new "${{ inputs.environment }}"
-          fi
-
-
+          if ! terraform workspace select "$TF_WORKSPACE"; then
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
 

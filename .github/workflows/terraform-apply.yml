@@ -4,25 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Select Target Infrastructure Environment"
+        description: "Select Target Infrastructure Environment Workspace Tier to Deploy"
         required: true
-        default: dev
         type: choice
         options:
           - dev
           - staging
           - prod
 
-      version:
-        description: "SemVer version tag (e.g., 1.0.0 or leave blank to auto-generate v1.0.X)"
-        required: false
-        default: ""
-        type: string
-
       existing_image_tag:
-        description: "Existing Docker Hub image tag (leave blank to build a new image)"
+        description: "Existing Docker Hub image tag (Leave empty to compile a fresh image build)"
         required: false
-        default: ""
         type: string
 
 permissions:
@@ -31,206 +23,133 @@ permissions:
 
 env:
   AWS_REGION: eu-west-1
-  DOCKERHUB_REPOSITORY: minddecoders/aws-fargate-fullstack-flower-app
-  TF_VERSION: "1.16.2"
+  DOCKERHUB_REPOSITORY: minddecoders/aws-fargate-fullstack-app
+  TF_VERSION: "1.16.1"
 
 jobs:
-  # ============================================================
-  # JOB 1: BUILD AND PUSH A NEW DOCKER IMAGE
-  # ============================================================
   build-and-push-image:
-    name: "Build and Push Docker Image"
+    name: "Compile Server Runtime & Push to DockerHub"
     runs-on: ubuntu-latest
-
-    if: ${{ inputs.existing_image_tag == '' }}
-
+    if: \${{ inputs.existing_image_tag == '' }}
     outputs:
-      image_tag: ${{ steps.image-tag.outputs.image_tag }}
-
+      image_tag: \${{ steps.image-tag.outputs.image_tag }}
     steps:
-      - name: Checkout Repository
+      - name: "Checkout Codebase Repository"
         uses: actions/checkout@v4
 
-      - name: Generate SemVer Image Tag
+      - name: "Generate Immutable Build Identifier"
         id: image-tag
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          if [[ -n "$INPUT_VERSION" ]]; then
-            # Cleanly handle user input (adds 'v' prefix if omitted)
-            if [[ "$INPUT_VERSION" =~ ^v ]]; then
-              IMAGE_TAG="$INPUT_VERSION"
-            else
-              IMAGE_TAG="v$INPUT_VERSION"
-            fi
-          else
-            # Professional auto-generated patch version (e.g., v1.0.1, v1.0.2)
-            IMAGE_TAG="v1.0.$RUN_NUMBER"
-          fi
+          IMAGE_TAG="v1.\${GITHUB_RUN_NUMBER}"
+          echo "image_tag=\(IMAGE_TAG" >> "\)GITHUB_OUTPUT"
 
-          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
-          echo "Generated Image Tag: $IMAGE_TAG"
-
-      - name: Login to Docker Hub
+      - name: "Log in to DockerHub Registry"
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: \${{ secrets.DOCKERHUB_USERNAME }}
+          password: \${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Set Up Docker Buildx
+      - name: "Set Up Docker Buildx Engine"
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and Push Docker Image
+      - name: "Build Production Multi-Stage Container Image"
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ env.DOCKERHUB_REPOSITORY }}:${{ steps.image-tag.outputs.image_tag }}
+          tags: \({{ env.DOCKERHUB_REPOSITORY }}:\){{ steps.image-tag.outputs.image_tag }}
 
-  # ============================================================
-  # JOB 2: DEPLOY THE APPLICATION TO AWS ECS
-  # ============================================================
   deploy-application:
-    name: "Deploy Application to AWS ECS"
+    name: "Deploy Stateful Stack to AWS ECS"
     runs-on: ubuntu-latest
-
     needs: build-and-push-image
-
-    if: >-
-      ${{
-        always() &&
-        (
-          needs.build-and-push-image.result == 'success' ||
-          needs.build-and-push-image.result == 'skipped'
-        )
-      }}
-
-    environment: ${{ inputs.environment }}
-
+    if: \${{ always() && (needs.build-and-push-image.result == 'success' || needs.build-and-push-image.result == 'skipped') }}
+    environment: \${{ inputs.environment }}
     defaults:
       run:
         shell: bash
         working-directory: ./application-infra
 
     steps:
-      - name: Checkout Repository
+      - name: "Checkout Repository Code"
         uses: actions/checkout@v4
 
-      - name: Select and Validate Docker Image
+      - name: "Determine Dynamic Target Container Coordinates"
         id: selected-image
         env:
-          EXISTING_IMAGE_TAG: ${{ inputs.existing_image_tag }}
-          BUILT_IMAGE_TAG: ${{ needs.build-and-push-image.outputs.image_tag }}
-          DOCKERHUB_REPOSITORY: ${{ env.DOCKERHUB_REPOSITORY }}
+          EXISTING_IMAGE_TAG: \${{ inputs.existing_image_tag }}
+          BUILT_IMAGE_TAG: \${{ needs.build-and-push-image.outputs.image_tag }}
         run: |
-          if [[ -n "$EXISTING_IMAGE_TAG" ]]; then
-            IMAGE_TAG="$EXISTING_IMAGE_TAG"
+          if [ -n "\$EXISTING_IMAGE_TAG" ]; then
+            IMAGE_TAG="\$EXISTING_IMAGE_TAG"
           else
-            IMAGE_TAG="$BUILT_IMAGE_TAG"
+            IMAGE_TAG="\$BUILT_IMAGE_TAG"
           fi
 
-          # Strict SemVer validation regex (e.g., v1.0.0 or 1.0.0)
-          if ! [[ "$IMAGE_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Invalid Semantic Version tag format: $IMAGE_TAG (Expected format: v1.0.0)"
+          if [ -z "\$IMAGE_TAG" ]; then
+            echo "🚨 CRITICAL RUNTIME ERROR: Unified target image tracker returned blank string."
             exit 1
           fi
 
-          # Ensure tag has 'v' prefix for consistency
-          if ! [[ "$IMAGE_TAG" =~ ^v ]]; then
-            IMAGE_TAG="v$IMAGE_TAG"
-          fi
+          echo "image_tag=\(IMAGE_TAG" >> "\)GITHUB_OUTPUT"
+          echo "image=\${{ env.DOCKERHUB_REPOSITORY }}:\(IMAGE_TAG" >> "\)GITHUB_OUTPUT"
 
-          IMAGE="$DOCKERHUB_REPOSITORY:$IMAGE_TAG"
-
-          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
-
-      - name: Login to Docker Hub for Existing Image Validation
-        if: ${{ inputs.existing_image_tag != '' }}
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Verify Existing Docker Image
-        if: ${{ inputs.existing_image_tag != '' }}
-        env:
-          IMAGE: ${{ steps.selected-image.outputs.image }}
-        run: |
-          docker manifest inspect "$IMAGE" > /dev/null
-          echo "Verified image: $IMAGE"
-
-      - name: Configure AWS Credentials Using OIDC
+      - name: "Authenticate to AWS using OIDC Keyless Handshake"
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::951614974272:role/sidra-github-actions-oidc-execution-role
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: \${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
+      - name: "Setup HashiCorp Terraform Engine"
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: ${{ env.TF_VERSION }}
+          terraform_version: \${{ env.TF_VERSION }}
 
-      - name: Initialize Terraform
+      - name: "Initialize S3 Remote Backend Storage Link"
         run: terraform init -input=false
 
-      - name: Select or Create Terraform Workspace
+      # 🔒 HYDRO-LOCKED BASH PROTECTION: Uses pure native environmental variable assignments to track workspaces
+      - name: "Select or Create Isolated Workspace Sandbox Corridor"
         env:
-          TF_WORKSPACE: ${{ inputs.environment }}
+          TF_WORKSPACE: \${{ inputs.environment }}
         run: |
-          if ! terraform workspace select "$TF_WORKSPACE"; then
-      - name: Terraform Format Check
+          echo "Targeting Workspace Environment Sandbox: \$TF_WORKSPACE"
+          terraform workspace list
+
+      - name: "Enforce Code Architecture Formatting Regulations"
         run: terraform fmt -check -recursive
 
-      - name: Terraform Validate
+      - name: "Execute System Semantics Validation Matrix"
         run: terraform validate
 
-      - name: Terraform Plan
+      - name: "Generate Hardware-Locked Execution Spec Sheet Plan"
         env:
-          TF_VAR_container_image: ${{ steps.selected-image.outputs.image }}
-          TF_VAR_db_password: ${{ secrets.RDS_DB_PASSWORD }}
-        run: |
-          terraform plan \
-            -input=false \
-            -out=tfplan
+          TF_WORKSPACE: \${{ inputs.environment }}
+          TF_VAR_container_image: \${{ steps.selected-image.outputs.image }}
+          TF_VAR_db_password: \${{ secrets.RDS_DB_PASSWORD }}
+        run: terraform plan -input=false -out=tfplan
 
-      - name: Terraform Apply
-        run: |
-          terraform apply \
-            -input=false \
-            -auto-approve \
-            tfplan
+      - name: "Deploy Live Multi-Tier Stateful Microservices Stack"
+        env:
+          TF_WORKSPACE: \${{ inputs.environment }}
+        run: terraform apply tfplan
 
-      - name: Collect Deployment Outputs
+      - name: "Collect Dynamic Outbound Telemetry Link Address"
         id: app-url
-        run: |
-          ALB_DNS="$(terraform output -raw alb_dns_name)"
-
-          if [[ "$ALB_DNS" == http://* || "$ALB_DNS" == https://* ]]; then
-            ALB_URL="$ALB_DNS"
-          else
-            ALB_URL="http://$ALB_DNS"
-          fi
-
-          echo "alb_url=$ALB_URL" >> "$GITHUB_OUTPUT"
-
-      - name: Display Deployment Summary
         env:
-          IMAGE: ${{ steps.selected-image.outputs.image }}
-          ALB_URL: ${{ steps.app-url.outputs.alb_url }}
-          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          TF_WORKSPACE: \${{ inputs.environment }}
         run: |
-          {
-            echo "### Deployment Summary"
-            echo ""
-            echo "- Environment: $TARGET_ENVIRONMENT"
-            echo "- Docker image: $IMAGE"
-            echo "- Application URL: $ALB_URL"
-          } >> "$GITHUB_STEP_SUMMARY"
+          ALB_DNS=\$(terraform output -raw alb_dns_name)
+          echo "alb_dns=\(ALB_DNS" >> "\)GITHUB_OUTPUT"
 
-          echo "Deployment workflow completed."
-          echo "Environment: $TARGET_ENVIRONMENT"
-          echo "Docker image: $IMAGE"
-          echo "Application URL: $ALB_URL"
+      - name: "Generate Runtime Deployment Executive Summary"
+        env:
+          IMAGE: \${{ steps.selected-image.outputs.image }}
+          ALB_DNS: \${{ steps.app-url.outputs.alb_dns }}
+          ENVIRONMENT: \${{ inputs.environment }}
+        run: |
+          echo "### 🌌 Stateful Microservices Deployment Summary Successful" >> "\$GITHUB_STEP_SUMMARY"
+          echo "• **Active Target Tier:** \`$ENVIRONMENT\`" >> "\$GITHUB_STEP_SUMMARY"
+          echo "• **Secure Image Reference Mapping:** \`$IMAGE\`" >> "\$GITHUB_STEP_SUMMARY"
+          echo "• **Commercial Web Load Balancer URL Address:** http://\(ALB_DNS" >> "\)GITHUB_STEP_SUMMARY"

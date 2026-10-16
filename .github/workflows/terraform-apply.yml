@@ -31,7 +31,7 @@ permissions:
 
 env:
   AWS_REGION: eu-west-1
-  DOCKERHUB_REPOSITORY: minddecoders/aws-fargate-fullstack-app
+  DOCKERHUB_REPOSITORY: minddecoders/aws-fargate-fullstack-flower-app
   TF_VERSION: "1.16.2"
 
 jobs:

@@ -47,7 +47,7 @@ resource "aws_iam_role" "github_oidc_role" {
           StringLike = {
             # Trust only the project's GitHub repository events
             "token.actions.githubusercontent.com:sub" = [
-              "repo:minddecoders*/aws-fargate-fullstack-app*:*"
+              "repo:minddecoders*/aws-fargate-fullstack-flower-app*:*"
             ]
           }
         }

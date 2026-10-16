@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Select the Terraform workspace to destroy"
+        description: "Select the specific target Terraform workspace environment to destroy"
         required: true
         default: dev
         type: choice
@@ -26,38 +26,38 @@ jobs:
     name: "Destroy Selected Workspace Infrastructure"
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
-
     defaults:
       run:
         shell: bash
         working-directory: ./application-infra
 
     steps:
-      - name: Checkout Repository
+      - name: "Checkout Repository Code"
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials Using OIDC
+      - name: "Configure AWS Credentials Using OIDC Handshake"
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::951614974272:role/sidra-github-actions-oidc-execution-role
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
+      - name: "Setup HashiCorp Terraform Engine"
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Initialize Terraform Backend
+      - name: "Initialize S3 Remote Backend Link"
         run: terraform init -input=false
 
-      - name: Select Target Workspace
+      - name: "Select Target Workspace Sandbox Environment"
         env:
           TARGET_ENVIRONMENT: ${{ inputs.environment }}
         run: |
           terraform workspace select "$TARGET_ENVIRONMENT"
-          echo "Selected workspace: $(terraform workspace show)"
+          echo "Active selected target workspace room: $(terraform workspace show)"
 
-      - name: Destroy Workspace Infrastructure
+      # 🧹 FINOPS WIPEOUT SWEEP: Deletes all active database clusters and networks to stop billing costs instantly!
+      - name: "Destroy Workspace Cloud Infrastructure Canvas"
         env:
-          TF_VAR_db_password: ${{ secrets.RDS_DB_PASSWORD }}
+          TF_VAR_db_password: ${{ secrets.RDS_DB_PASSWORD }} # Authorizes teardown commands across state-locked resources safely
         run: terraform destroy -input=false -auto-approve

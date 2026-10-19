@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from "react";
+import { getProducts } from "./api";
 import { 
   ShoppingBag, Heart, Search, Menu, X, Star, Plus, Minus, 
   ChevronRight, Check, ShieldCheck, Truck, Clock, Sparkles, 
@@ -13,6 +14,7 @@ const categories = [
   { id: 'orchids', name: 'Orchids' },
   { id: 'seasonal', name: 'Seasonal Picks' },
   { id: 'bundles', name: 'Gift Bundles' },
+  
 ];
 
 const flowers = [
@@ -106,6 +108,15 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [checkoutComplete, setCheckoutComplete] = useState(false);
 
+  const [products, setProducts] = useState([]);
+  const [apiError, setApiError] = useState("");
+
+useEffect(() => {
+  getProducts()
+    .then(setProducts)
+    .catch((error) => setApiError(error.message));
+}, []);
+
   // Bouquet Builder State with images added
   const [builderBase, setBuilderBase] = useState({ name: 'Roses', price: 35, image: 'https://images.unsplash.com/photo-1561181286-d3fee7d55364?auto=format&fit=crop&q=80&w=400' });
   const [builderGreenery, setBuilderGreenery] = useState({ name: 'Eucalyptus', price: 10, image: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=400' });
@@ -113,7 +124,7 @@ export default function App() {
   const [builderRibbon, setBuilderRibbon] = useState({ name: 'Silk Satin', price: 4, image: 'https://images.unsplash.com/photo-1526047932273-341f2a7631f9?auto=format&fit=crop&q=80&w=400' });
 
   // Filter products
-  const filteredFlowers = flowers.filter(flower => {
+  const filteredFlowers = products.filter(flower => {
     const matchesCategory = selectedCategory === 'all' || flower.category === selectedCategory;
     const matchesSearch = flower.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           flower.description.toLowerCase().includes(searchQuery.toLowerCase());
@@ -358,6 +369,7 @@ export default function App() {
               <h1 className="font-serif text-4xl font-bold text-[#2C3531] mt-2">Explore Our Fresh Flower Selection</h1>
               <p className="text-gray-600 mt-2">Find the ultimate bouquet to brighten someone's day or elevate your home decor.</p>
             </div>
+            {apiError && <p className="text-red-600">{apiError}</p>}
 
             {/* Search & Filter Bar */}
             <div className="flex flex-col md:flex-row gap-4 items-center justify-between mb-8">

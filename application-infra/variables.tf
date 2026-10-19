@@ -48,13 +48,17 @@ variable "private_instance_ami" {
 
 variable "container_image" {
   type        = string
-  description = "The target Docker container image coordinates path tag string"
-  default     = null
+  description = "Docker image for the backend API"
+  nullable    = false
+}
+variable "container_port" {
+  description = "Port exposed by the backend API"
+  type        = number
+  default     = 3000
 }
 
-variable "db_password" {
+variable "health_check_path" {
+  description = "Backend API health-check endpoint"
   type        = string
-  description = "Master password for the RDS MySQL cluster"
-  sensitive   = true
-  nullable    = false
+  default     = "/health"
 }

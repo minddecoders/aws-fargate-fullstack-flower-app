@@ -21,12 +21,12 @@ provider "aws" {
   region = var.aws_region
 }
 
-# ============================================================
-# LOCALS
-# ============================================================
+# ============================================================================
+# LOCALS AND SEEDED IMAGE REFERENCES
+# ============================================================================
 
 locals {
-  project_name = "AWS-Fargate-Fullstack-App"
+  project_name = "aws-fargate-fullstack-app"
 
   instance_sizes = {
     default = "t3.micro"
@@ -54,170 +54,171 @@ locals {
     0
   )
 
-  approved_image = trimspace(var.container_image)
+  common_tags = {
+    Project     = local.project_name
+    Environment = terraform.workspace
+    ManagedBy   = "Terraform"
+  }
 }
-
-# ============================================================
-# DATA SOURCES
-# ============================================================
 
 data "aws_availability_zones" "available" {
   state = "available"
 }
 
-data "aws_secretsmanager_secret" "db_secret" {
-  name = "sidra-fullstack-microservices-db-secrets"
+data "aws_ssm_parameter" "backend_image" {
+  name = "/${terraform.workspace}/backend-image-tag"
 }
 
-# This assumes the existing secret uses the AWS-managed
-# Secrets Manager encryption key.
-data "aws_kms_key" "secrets_kms" {
-  key_id = "alias/aws/secretsmanager"
+data "aws_ssm_parameter" "frontend_image" {
+  name = "/${terraform.workspace}/frontend-image-tag"
 }
 
-# ============================================================
+# ============================================================================
 # VPC AND NETWORKING
-# ============================================================
+# ============================================================================
 
-resource "aws_vpc" "fullstack_vpc" {
+resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
 
-  tags = {
-    Name    = "${local.project_name}-${terraform.workspace}-vpc"
-    Project = local.project_name
-  }
+  tags = merge(local.common_tags, {
+    Name = "${local.project_name}-${terraform.workspace}-vpc"
+  })
 }
 
-resource "aws_internet_gateway" "fullstack_igw" {
-  vpc_id = aws_vpc.fullstack_vpc.id
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "${local.project_name}-${terraform.workspace}-igw"
-  }
+  })
 }
 
-resource "aws_subnet" "fullstack_public_a" {
-  vpc_id                  = aws_vpc.fullstack_vpc.id
+resource "aws_subnet" "public_a" {
+  vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnet_cidr
   availability_zone       = data.aws_availability_zones.available.names[0]
   map_public_ip_on_launch = true
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "${local.project_name}-${terraform.workspace}-public-a"
-  }
+    Tier = "public"
+  })
 }
 
-resource "aws_subnet" "fullstack_public_b" {
-  vpc_id                  = aws_vpc.fullstack_vpc.id
+resource "aws_subnet" "public_b" {
+  vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnet_b_cidr
   availability_zone       = data.aws_availability_zones.available.names[1]
   map_public_ip_on_launch = true
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "${local.project_name}-${terraform.workspace}-public-b"
-  }
+    Tier = "public"
+  })
 }
 
-resource "aws_subnet" "fullstack_private_a" {
-  vpc_id            = aws_vpc.fullstack_vpc.id
+resource "aws_subnet" "private_a" {
+  vpc_id            = aws_vpc.main.id
   cidr_block        = var.private_subnet_cidr
   availability_zone = data.aws_availability_zones.available.names[0]
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "${local.project_name}-${terraform.workspace}-private-a"
-  }
+    Tier = "private"
+  })
 }
 
-resource "aws_subnet" "fullstack_private_b" {
-  vpc_id            = aws_vpc.fullstack_vpc.id
+resource "aws_subnet" "private_b" {
+  vpc_id            = aws_vpc.main.id
   cidr_block        = var.private_subnet_b_cidr
   availability_zone = data.aws_availability_zones.available.names[1]
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "${local.project_name}-${terraform.workspace}-private-b"
-  }
+    Tier = "private"
+  })
 }
 
-resource "aws_route_table" "fullstack_public_rt" {
-  vpc_id = aws_vpc.fullstack_vpc.id
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.fullstack_igw.id
+    gateway_id = aws_internet_gateway.main.id
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "${local.project_name}-${terraform.workspace}-public-rt"
-  }
+  })
 }
 
-resource "aws_route_table_association" "fullstack_public_assoc" {
-  subnet_id      = aws_subnet.fullstack_public_a.id
-  route_table_id = aws_route_table.fullstack_public_rt.id
+resource "aws_route_table_association" "public_a" {
+  subnet_id      = aws_subnet.public_a.id
+  route_table_id = aws_route_table.public.id
 }
 
-resource "aws_route_table_association" "fullstack_public_b_assoc" {
-  subnet_id      = aws_subnet.fullstack_public_b.id
-  route_table_id = aws_route_table.fullstack_public_rt.id
+resource "aws_route_table_association" "public_b" {
+  subnet_id      = aws_subnet.public_b.id
+  route_table_id = aws_route_table.public.id
 }
 
-resource "aws_eip" "fullstack_nat_eip" {
+resource "aws_eip" "nat" {
   domain = "vpc"
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "${local.project_name}-${terraform.workspace}-nat-eip"
-  }
+  })
+
+  depends_on = [aws_internet_gateway.main]
 }
 
-resource "aws_nat_gateway" "fullstack_nat" {
-  allocation_id = aws_eip.fullstack_nat_eip.id
-  subnet_id     = aws_subnet.fullstack_public_a.id
+resource "aws_nat_gateway" "main" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public_a.id
 
-  depends_on = [
-    aws_route_table_association.fullstack_public_assoc
-  ]
-
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "${local.project_name}-${terraform.workspace}-nat"
-  }
+  })
+
+  depends_on = [aws_internet_gateway.main]
 }
 
-resource "aws_route_table" "fullstack_private_rt" {
-  vpc_id = aws_vpc.fullstack_vpc.id
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
 
   route {
     cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.fullstack_nat.id
+    nat_gateway_id = aws_nat_gateway.main.id
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "${local.project_name}-${terraform.workspace}-private-rt"
-  }
+  })
 }
 
-resource "aws_route_table_association" "fullstack_private_a_assoc" {
-  subnet_id      = aws_subnet.fullstack_private_a.id
-  route_table_id = aws_route_table.fullstack_private_rt.id
+resource "aws_route_table_association" "private_a" {
+  subnet_id      = aws_subnet.private_a.id
+  route_table_id = aws_route_table.private.id
 }
 
-resource "aws_route_table_association" "fullstack_private_b_assoc" {
-  subnet_id      = aws_subnet.fullstack_private_b.id
-  route_table_id = aws_route_table.fullstack_private_rt.id
+resource "aws_route_table_association" "private_b" {
+  subnet_id      = aws_subnet.private_b.id
+  route_table_id = aws_route_table.private.id
 }
 
-# ============================================================
+# ============================================================================
 # SECURITY GROUPS
-# ============================================================
+# ============================================================================
 
-resource "aws_security_group" "fullstack_alb_sg" {
+resource "aws_security_group" "alb" {
   name        = "${local.project_name}-${terraform.workspace}-alb-sg"
-  description = "Allow HTTP traffic to the application load balancer"
-  vpc_id      = aws_vpc.fullstack_vpc.id
+  description = "Allow public HTTP traffic to the application load balancer"
+  vpc_id      = aws_vpc.main.id
 
   ingress {
-    description = "HTTP from internet"
+    description = "HTTP from the internet"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -225,55 +226,61 @@ resource "aws_security_group" "fullstack_alb_sg" {
   }
 
   egress {
-    description = "Outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "${local.project_name}-${terraform.workspace}-alb-sg"
-  }
+  })
 }
 
-resource "aws_security_group" "fullstack_ecs_sg" {
+resource "aws_security_group" "ecs_tasks" {
   name        = "${local.project_name}-${terraform.workspace}-ecs-sg"
   description = "Allow application traffic only from the ALB"
-  vpc_id      = aws_vpc.fullstack_vpc.id
+  vpc_id      = aws_vpc.main.id
 
   ingress {
-    description     = "Application traffic from ALB"
+    description     = "Backend API traffic from ALB"
     from_port       = var.container_port
     to_port         = var.container_port
     protocol        = "tcp"
-    security_groups = [aws_security_group.fullstack_alb_sg.id]
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  ingress {
+    description     = "Frontend HTTP traffic from ALB"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
   }
 
   egress {
-    description = "Outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "${local.project_name}-${terraform.workspace}-ecs-sg"
-  }
+  })
 }
 
-resource "aws_security_group" "fullstack_public_vm_sg" {
+resource "aws_security_group" "public_vm" {
   name        = "${local.project_name}-${terraform.workspace}-public-vm-sg"
-  description = "Security group for public EC2 instance"
-  vpc_id      = aws_vpc.fullstack_vpc.id
+  description = "SSH access to public management instance"
+  vpc_id      = aws_vpc.main.id
 
   ingress {
-    description = "SSH - restrict this to your own IP before applying"
+    description = "SSH from the configured administrator IP"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["37.111.170.134/32"]
   }
 
   egress {
@@ -283,22 +290,22 @@ resource "aws_security_group" "fullstack_public_vm_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "${local.project_name}-${terraform.workspace}-public-vm-sg"
-  }
+  })
 }
 
-resource "aws_security_group" "fullstack_private_vm_sg" {
+resource "aws_security_group" "private_vm" {
   name        = "${local.project_name}-${terraform.workspace}-private-vm-sg"
-  description = "Security group for private EC2 instance"
-  vpc_id      = aws_vpc.fullstack_vpc.id
+  description = "Allow SSH only from the public management instance"
+  vpc_id      = aws_vpc.main.id
 
   ingress {
-    description     = "SSH from public EC2 security group"
+    description     = "SSH from public management instance"
     from_port       = 22
     to_port         = 22
     protocol        = "tcp"
-    security_groups = [aws_security_group.fullstack_public_vm_sg.id]
+    security_groups = [aws_security_group.public_vm.id]
   }
 
   egress {
@@ -308,22 +315,22 @@ resource "aws_security_group" "fullstack_private_vm_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "${local.project_name}-${terraform.workspace}-private-vm-sg"
-  }
+  })
 }
 
-resource "aws_security_group" "fullstack_private_db_sg" {
-  name        = "${local.project_name}-${terraform.workspace}-db-sg"
+resource "aws_security_group" "database" {
+  name        = "${local.project_name}-${terraform.workspace}-database-sg"
   description = "Allow MySQL only from ECS tasks"
-  vpc_id      = aws_vpc.fullstack_vpc.id
+  vpc_id      = aws_vpc.main.id
 
   ingress {
-    description     = "MySQL from ECS backend"
+    description     = "MySQL from ECS tasks"
     from_port       = 3306
     to_port         = 3306
     protocol        = "tcp"
-    security_groups = [aws_security_group.fullstack_ecs_sg.id]
+    security_groups = [aws_security_group.ecs_tasks.id]
   }
 
   egress {
@@ -333,16 +340,16 @@ resource "aws_security_group" "fullstack_private_db_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = {
-    Name = "${local.project_name}-${terraform.workspace}-db-sg"
-  }
+  tags = merge(local.common_tags, {
+    Name = "${local.project_name}-${terraform.workspace}-database-sg"
+  })
 }
 
-# ============================================================
-# IAM ROLE FOR EC2 SSM ACCESS
-# ============================================================
+# ============================================================================
+# EC2 MANAGEMENT INSTANCES AND SSM
+# ============================================================================
 
-resource "aws_iam_role" "fullstack_ec2_ssm_role" {
+resource "aws_iam_role" "ec2_ssm" {
   name = "${local.project_name}-${terraform.workspace}-ec2-ssm-role"
 
   assume_role_policy = jsonencode({
@@ -356,67 +363,68 @@ resource "aws_iam_role" "fullstack_ec2_ssm_role" {
     }]
   })
 
-  tags = {
-    Project = local.project_name
-  }
+  tags = local.common_tags
 }
 
-resource "aws_iam_role_policy_attachment" "fullstack_ec2_ssm_policy" {
-  role       = aws_iam_role.fullstack_ec2_ssm_role.name
+resource "aws_iam_role_policy_attachment" "ec2_ssm" {
+  role       = aws_iam_role.ec2_ssm.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-resource "aws_iam_instance_profile" "fullstack_ec2_profile" {
+resource "aws_iam_instance_profile" "ec2_ssm" {
   name = "${local.project_name}-${terraform.workspace}-ec2-profile"
-  role = aws_iam_role.fullstack_ec2_ssm_role.name
+  role = aws_iam_role.ec2_ssm.name
 }
 
-# ============================================================
-# EC2 INSTANCES
-# ============================================================
-
-resource "aws_instance" "fullstack_public_vm" {
+resource "aws_instance" "public_vm" {
   ami                         = var.public_instance_ami
   instance_type               = local.current_instance_type
-  subnet_id                   = aws_subnet.fullstack_public_a.id
-  vpc_security_group_ids      = [aws_security_group.fullstack_public_vm_sg.id]
-  iam_instance_profile        = aws_iam_instance_profile.fullstack_ec2_profile.name
+  subnet_id                   = aws_subnet.public_a.id
+  vpc_security_group_ids      = [aws_security_group.public_vm.id]
+  iam_instance_profile        = aws_iam_instance_profile.ec2_ssm.name
   associate_public_ip_address = true
 
-  tags = {
-    Name    = "${local.project_name}-${terraform.workspace}-public-vm"
-    Project = local.project_name
-  }
+  tags = merge(local.common_tags, {
+    Name = "${local.project_name}-${terraform.workspace}-public-vm"
+  })
+
+  depends_on = [aws_route_table_association.public_a]
 }
 
-resource "aws_instance" "fullstack_private_vm" {
+resource "aws_instance" "private_vm" {
   ami                    = var.private_instance_ami
   instance_type          = local.current_instance_type
-  subnet_id              = aws_subnet.fullstack_private_a.id
-  vpc_security_group_ids = [aws_security_group.fullstack_private_vm_sg.id]
-  iam_instance_profile   = aws_iam_instance_profile.fullstack_ec2_profile.name
+  subnet_id              = aws_subnet.private_a.id
+  vpc_security_group_ids = [aws_security_group.private_vm.id]
+  iam_instance_profile   = aws_iam_instance_profile.ec2_ssm.name
 
-  tags = {
-    Name    = "${local.project_name}-${terraform.workspace}-private-vm"
-    Project = local.project_name
-  }
+  associate_public_ip_address = false
+
+  tags = merge(local.common_tags, {
+    Name = "${local.project_name}-${terraform.workspace}-private-vm"
+  })
+
+  depends_on = [
+    aws_route_table_association.private_a,
+    aws_route_table.private
+  ]
 }
 
-# ============================================================
-# RDS MYSQL
-# ============================================================
+# ============================================================================
+# RDS MYSQL AND AUTOMATIC MASTER PASSWORD
+# ============================================================================
 
-resource "aws_db_subnet_group" "fullstack_db_subnet_group" {
+resource "aws_db_subnet_group" "main" {
   name = "${local.project_name}-${terraform.workspace}-db-subnets"
 
   subnet_ids = [
-    aws_subnet.fullstack_private_a.id,
-    aws_subnet.fullstack_private_b.id
+    aws_subnet.private_a.id,
+    aws_subnet.private_b.id
   ]
 
-  tags = {
+  tags = merge(local.common_tags, {
     Name = "${local.project_name}-${terraform.workspace}-db-subnets"
-  }
+  })
 }
 
 resource "aws_db_instance" "fullstack_rds" {
@@ -424,8 +432,8 @@ resource "aws_db_instance" "fullstack_rds" {
 
   engine         = "mysql"
   engine_version = "8.0"
+  instance_class = "db.t3.micro"
 
-  instance_class        = "db.t3.micro"
   allocated_storage     = 20
   max_allocated_storage = 50
   storage_type          = "gp3"
@@ -433,29 +441,30 @@ resource "aws_db_instance" "fullstack_rds" {
 
   db_name  = "fullstackdb"
   username = "appadmin"
-  password = var.db_password
 
-  db_subnet_group_name   = aws_db_subnet_group.fullstack_db_subnet_group.name
-  vpc_security_group_ids = [aws_security_group.fullstack_private_db_sg.id]
+  manage_master_user_password = true
 
-  publicly_accessible        = false
-  multi_az                   = terraform.workspace == "prod"
+  db_subnet_group_name   = aws_db_subnet_group.main.name
+  vpc_security_group_ids = [aws_security_group.database.id]
+  publicly_accessible    = false
+
+  multi_az = terraform.workspace == "prod"
+
   backup_retention_period    = terraform.workspace == "prod" ? 7 : 1
   deletion_protection        = terraform.workspace == "prod"
   skip_final_snapshot        = terraform.workspace != "prod"
   auto_minor_version_upgrade = true
 
-  tags = {
-    Name    = "${local.project_name}-${terraform.workspace}-mysql"
-    Project = local.project_name
-  }
+  tags = merge(local.common_tags, {
+    Name = "${local.project_name}-${terraform.workspace}-mysql"
+  })
 }
 
-# ============================================================
-# ECS TASK EXECUTION ROLE
-# ============================================================
+# ============================================================================
+# ECS TASK EXECUTION ROLE AND SECRET ACCESS
+# ============================================================================
 
-resource "aws_iam_role" "fullstack_ecs_execution_role" {
+resource "aws_iam_role" "ecs_execution" {
   name = "${local.project_name}-${terraform.workspace}-ecs-execution-role"
 
   assume_role_policy = jsonencode({
@@ -469,19 +478,17 @@ resource "aws_iam_role" "fullstack_ecs_execution_role" {
     }]
   })
 
-  tags = {
-    Project = local.project_name
-  }
+  tags = local.common_tags
 }
 
-resource "aws_iam_role_policy_attachment" "fullstack_ecs_execution_policy" {
-  role       = aws_iam_role.fullstack_ecs_execution_role.name
+resource "aws_iam_role_policy_attachment" "ecs_execution" {
+  role       = aws_iam_role.ecs_execution.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-resource "aws_iam_role_policy" "fullstack_ecs_secrets_policy" {
-  name = "${local.project_name}-${terraform.workspace}-secrets-policy"
-  role = aws_iam_role.fullstack_ecs_execution_role.id
+resource "aws_iam_role_policy" "ecs_database_secret" {
+  name = "${local.project_name}-${terraform.workspace}-database-secret-access"
+  role = aws_iam_role.ecs_execution.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -490,44 +497,52 @@ resource "aws_iam_role_policy" "fullstack_ecs_secrets_policy" {
       Action = [
         "secretsmanager:GetSecretValue"
       ]
-      Resource = data.aws_secretsmanager_secret.db_secret.arn
+      Resource = aws_db_instance.fullstack_rds.master_user_secret[0].secret_arn
     }]
   })
 }
 
-# ============================================================
-# ECS CLUSTER AND TASK DEFINITION
-# ============================================================
+# ============================================================================
+# ECS CLUSTER AND CLOUDWATCH LOG GROUPS
+# ============================================================================
 
-resource "aws_ecs_cluster" "fullstack_cluster" {
+resource "aws_ecs_cluster" "main" {
   name = "${local.project_name}-${terraform.workspace}-cluster"
 
-  tags = {
-    Project = local.project_name
-  }
+  tags = local.common_tags
 }
 
-resource "aws_cloudwatch_log_group" "fullstack_backend_logs" {
+resource "aws_cloudwatch_log_group" "backend" {
   name              = "/ecs/${local.project_name}/${terraform.workspace}/backend"
   retention_in_days = 7
 
-  tags = {
-    Project = local.project_name
-  }
+  tags = local.common_tags
 }
 
-resource "aws_ecs_task_definition" "fullstack_backend_task" {
+resource "aws_cloudwatch_log_group" "frontend" {
+  name              = "/ecs/${local.project_name}/${terraform.workspace}/frontend"
+  retention_in_days = 7
+
+  tags = local.common_tags
+}
+
+# ============================================================================
+# BACKEND ECS TASK DEFINITION
+# ============================================================================
+
+resource "aws_ecs_task_definition" "backend" {
   family                   = "${local.project_name}-${terraform.workspace}-backend"
-  network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
   cpu                      = "256"
   memory                   = "512"
-  execution_role_arn       = aws_iam_role.fullstack_ecs_execution_role.arn
+
+  execution_role_arn = aws_iam_role.ecs_execution.arn
 
   container_definitions = jsonencode([
     {
       name      = "backend-api-container"
-      image     = local.approved_image
+      image     = data.aws_ssm_parameter.backend_image.value
       essential = true
 
       portMappings = [{
@@ -547,68 +562,102 @@ resource "aws_ecs_task_definition" "fullstack_backend_task" {
         },
         {
           name  = "DB_NAME"
-          value = aws_db_instance.fullstack_rds.db_name
+          value = "fullstackdb"
         },
         {
           name  = "DB_USER"
-          value = aws_db_instance.fullstack_rds.username
+          value = "appadmin"
         }
       ]
 
       secrets = [{
         name      = "DATABASE_PASSWORD"
-        valueFrom = "${data.aws_secretsmanager_secret.db_secret.arn}:password::"
+        valueFrom = "${aws_db_instance.fullstack_rds.master_user_secret[0].secret_arn}:password::"
       }]
 
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.fullstack_backend_logs.name
-          "awslogs-region"        = var.aws_region
-          "awslogs-stream-prefix" = "backend"
+          awslogs-group         = aws_cloudwatch_log_group.backend.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "backend"
         }
       }
     }
   ])
 
-  tags = {
-    Project = local.project_name
-  }
+  tags = local.common_tags
 }
 
-# ============================================================
-# APPLICATION LOAD BALANCER
-# ============================================================
+# ============================================================================
+# FRONTEND ECS TASK DEFINITION
+# ============================================================================
+
+resource "aws_ecs_task_definition" "frontend" {
+  family                   = "${local.project_name}-${terraform.workspace}-frontend"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "256"
+  memory                   = "512"
+
+  execution_role_arn = aws_iam_role.ecs_execution.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "frontend-container"
+      image     = data.aws_ssm_parameter.frontend_image.value
+      essential = true
+
+      portMappings = [{
+        containerPort = 80
+        hostPort      = 80
+        protocol      = "tcp"
+      }]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.frontend.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "frontend"
+        }
+      }
+    }
+  ])
+
+  tags = local.common_tags
+}
+
+# ============================================================================
+# APPLICATION LOAD BALANCER AND TARGET GROUPS
+# ============================================================================
 
 resource "aws_lb" "fullstack_alb" {
-  name               = "fullstack-${terraform.workspace}-alb"
+  name               = "${local.project_name}-${terraform.workspace}-alb"
   internal           = false
   load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
 
   subnets = [
-    aws_subnet.fullstack_public_a.id,
-    aws_subnet.fullstack_public_b.id
+    aws_subnet.public_a.id,
+    aws_subnet.public_b.id
   ]
 
-  security_groups = [aws_security_group.fullstack_alb_sg.id]
-
-  tags = {
-    Name    = "${local.project_name}-${terraform.workspace}-alb"
-    Project = local.project_name
-  }
+  tags = local.common_tags
 }
 
-resource "aws_lb_target_group" "fullstack_backend_tg" {
-  name        = "fullstack-${terraform.workspace}-tg"
-  port        = var.container_port
+resource "aws_lb_target_group" "backend" {
+  # 🛡️ SAFE PREFIX: Prevents the 32-character AWS naming length crash
+  name_prefix = "b-api-"
+  port        = var.container_port # Ensure this variable evaluates to 3000!
   protocol    = "HTTP"
-  vpc_id      = aws_vpc.fullstack_vpc.id
   target_type = "ip"
+  vpc_id      = aws_vpc.main.id
 
   health_check {
     enabled             = true
+    path                = var.health_check_path # Ensure this variable evaluates to "/health"!
     protocol            = "HTTP"
-    path                = var.health_check_path
     matcher             = "200-399"
     interval            = 30
     timeout             = 5
@@ -616,73 +665,160 @@ resource "aws_lb_target_group" "fullstack_backend_tg" {
     unhealthy_threshold = 3
   }
 
-  tags = {
-    Project = local.project_name
-  }
+  tags = local.common_tags
 }
 
-resource "aws_lb_listener" "fullstack_http_listener" {
+resource "aws_lb_target_group" "frontend" {
+  # 🛡️ SAFE PREFIX: Prevents the 32-character AWS naming length crash
+  name_prefix = "f-web-"
+  # 🔄 FIXED PORT: Synchronized to route directly to your frontend's internal listening engine port
+  port        = 80
+  protocol    = "HTTP"
+  target_type = "ip"
+  vpc_id      = aws_vpc.main.id
+
+  health_check {
+    enabled             = true
+    path                = "/"
+    protocol            = "HTTP"
+    matcher             = "200-399"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+
+  tags = local.common_tags
+}
+
+# ============================================================================
+# APPLICATION ROUTING LISTENERS & TRAFFIC POLICIES
+# ============================================================================
+
+resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.fullstack_alb.arn
   port              = 80
   protocol          = "HTTP"
 
+  # Default action handles all standard browser visual interface traffic
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.fullstack_backend_tg.arn
+    target_group_arn = aws_lb_target_group.frontend.arn
   }
+
+  tags = local.common_tags
 }
 
-# ============================================================
-# ECS SERVICE
-# ============================================================
+resource "aws_lb_listener_rule" "backend_api" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 100
 
-resource "aws_ecs_service" "fullstack_backend_service" {
-  name            = "${local.project_name}-${terraform.workspace}-backend-service"
-  cluster         = aws_ecs_cluster.fullstack_cluster.id
-  task_definition = aws_ecs_task_definition.fullstack_backend_task.arn
+  # Intercepts data routing traffic matching the specific API path pattern
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.backend.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/*"]
+    }
+  }
+
+  tags = local.common_tags
+}
+
+
+# ============================================================================
+# ECS SERVICES
+# ============================================================================
+
+resource "aws_ecs_service" "backend" {
+  name            = "${local.project_name}-${terraform.workspace}-backend"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.backend.arn
   desired_count   = local.current_task_count
   launch_type     = "FARGATE"
 
-  deployment_minimum_healthy_percent = 50
-  deployment_maximum_percent         = 200
-  wait_for_steady_state              = true
+  platform_version      = "LATEST"
+  wait_for_steady_state = true
 
   network_configuration {
     subnets = [
-      aws_subnet.fullstack_private_a.id,
-      aws_subnet.fullstack_private_b.id
+      aws_subnet.private_a.id,
+      aws_subnet.private_b.id
     ]
 
-    security_groups  = [aws_security_group.fullstack_ecs_sg.id]
+    security_groups  = [aws_security_group.ecs_tasks.id]
     assign_public_ip = false
   }
 
   load_balancer {
-    target_group_arn = aws_lb_target_group.fullstack_backend_tg.arn
+    target_group_arn = aws_lb_target_group.backend.arn
     container_name   = "backend-api-container"
     container_port   = var.container_port
   }
 
   depends_on = [
-    aws_lb_listener.fullstack_http_listener,
-    aws_iam_role_policy_attachment.fullstack_ecs_execution_policy,
-    aws_iam_role_policy.fullstack_ecs_secrets_policy,
-    aws_route_table_association.fullstack_private_a_assoc,
-    aws_route_table_association.fullstack_private_b_assoc
+    aws_lb_listener.http,
+    aws_lb_listener_rule.backend_api,
+    aws_iam_role_policy_attachment.ecs_execution,
+    aws_iam_role_policy.ecs_database_secret,
+    aws_route_table_association.private_a,
+    aws_route_table_association.private_b
   ]
 
-  tags = {
-    Project = local.project_name
-  }
+  tags = local.common_tags
 }
 
-# ============================================================
+resource "aws_ecs_service" "frontend" {
+  name            = "${local.project_name}-${terraform.workspace}-frontend"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.frontend.arn
+  desired_count   = local.current_task_count
+  launch_type     = "FARGATE"
+
+  platform_version      = "LATEST"
+  wait_for_steady_state = true
+
+  network_configuration {
+    subnets = [
+      aws_subnet.private_a.id,
+      aws_subnet.private_b.id
+    ]
+
+    security_groups  = [aws_security_group.ecs_tasks.id]
+    assign_public_ip = false
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.frontend.arn
+    container_name   = "frontend-container"
+    container_port   = 80
+  }
+
+  depends_on = [
+    aws_lb_listener.http,
+    aws_iam_role_policy_attachment.ecs_execution,
+    aws_route_table_association.private_a,
+    aws_route_table_association.private_b
+  ]
+
+  tags = local.common_tags
+}
+
+# ============================================================================
 # OUTPUTS
-# ============================================================
+# ============================================================================
 
 output "application_url" {
-  description = "Application Load Balancer URL"
+  description = "Public URL of the full-stack application"
   value       = "http://${aws_lb.fullstack_alb.dns_name}"
+}
+
+output "alb_dns_name" {
+  description = "Application Load Balancer DNS name"
+  value       = aws_lb.fullstack_alb.dns_name
 }
 
 output "rds_endpoint" {
@@ -692,10 +828,10 @@ output "rds_endpoint" {
 
 output "ecs_cluster_name" {
   description = "ECS cluster name"
-  value       = aws_ecs_cluster.fullstack_cluster.name
+  value       = aws_ecs_cluster.main.name
 }
 
 output "workspace" {
-  description = "Current Terraform workspace"
+  description = "Active Terraform workspace"
   value       = terraform.workspace
 }

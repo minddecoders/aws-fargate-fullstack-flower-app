@@ -9,10 +9,16 @@ output "rds_endpoint_address" {
 }
 
 output "alb_dns_name" {
-  value       = "placeholder-load-balancer-dns"
-  description = "Temporary integration bridge placeholder reference"
+  value       = aws_lb.fullstack_alb.dns_name
+  description = "DNS name of the application load balancer"
 }
-output "ssm_parameter_path" {
-  value       = aws_ssm_parameter.app_image_version.name
-  description = "The SSM Parameter Store path tracking the deployed container image"
+
+output "ssm_backend_image_parameter_path" {
+  value       = data.aws_ssm_parameter.backend_image.name
+  description = "SSM Parameter Store path for the backend Docker image"
+}
+
+output "ssm_frontend_image_parameter_path" {
+  value       = data.aws_ssm_parameter.frontend_image.name
+  description = "SSM Parameter Store path for the frontend Docker image"
 }

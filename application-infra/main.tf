@@ -211,7 +211,16 @@ resource "aws_route_table_association" "private_b" {
 # ============================================================================
 # SECURITY GROUPS
 # ============================================================================
+resource "aws_default_security_group" "default" {
+  vpc_id = aws_vpc.main.id
 
+  ingress = []
+  egress  = []
+
+  tags = merge(local.common_tags, {
+    Name = "${local.project_name}-${terraform.workspace}-default-sg"
+  })
+}
 resource "aws_security_group" "alb" {
   name        = "${local.project_name}-${terraform.workspace}-alb-sg"
   description = "Allow public HTTP traffic to the application load balancer"
@@ -633,7 +642,7 @@ resource "aws_ecs_task_definition" "frontend" {
 # ============================================================================
 
 resource "aws_lb" "fullstack_alb" {
-  name               =  "fs-${terraform.workspace}-alb"
+  name               = "fs-${terraform.workspace}-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]

@@ -1,5 +1,5 @@
 output "vpc_id" {
-  value       = aws_vpc.fullstack_vpc.id
+  value       = aws_vpc.main.id
   description = "The tracking ID signature of your isolated VPC network environment"
 }
 
@@ -21,4 +21,8 @@ output "ssm_backend_image_parameter_path" {
 output "ssm_frontend_image_parameter_path" {
   value       = data.aws_ssm_parameter.frontend_image.name
   description = "SSM Parameter Store path for the frontend Docker image"
+}
+output "application_url" {
+  value       = "http://${aws_lb.fullstack_alb.dns_name}"
+  description = "The public web address of your full-stack deployment"
 }

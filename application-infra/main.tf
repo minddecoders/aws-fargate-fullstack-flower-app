@@ -83,7 +83,7 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true
 
   tags = merge(local.common_tags, {
-    Name = "${local.project_name}-${terraform.workspace}-vpc"
+    name = "fs-${terraform.workspace}-alb"
   })
 }
 
@@ -280,7 +280,7 @@ resource "aws_security_group" "public_vm" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["37.111.170.134/32"]
+    cidr_blocks = ["37.111.140.128/32"]
   }
 
   egress {
@@ -633,7 +633,7 @@ resource "aws_ecs_task_definition" "frontend" {
 # ============================================================================
 
 resource "aws_lb" "fullstack_alb" {
-  name               = "${local.project_name}-${terraform.workspace}-alb"
+  name               =  "fs-${terraform.workspace}-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
@@ -807,31 +807,3 @@ resource "aws_ecs_service" "frontend" {
   tags = local.common_tags
 }
 
-# ============================================================================
-# OUTPUTS
-# ============================================================================
-
-output "application_url" {
-  description = "Public URL of the full-stack application"
-  value       = "http://${aws_lb.fullstack_alb.dns_name}"
-}
-
-output "alb_dns_name" {
-  description = "Application Load Balancer DNS name"
-  value       = aws_lb.fullstack_alb.dns_name
-}
-
-output "rds_endpoint" {
-  description = "Private RDS endpoint"
-  value       = aws_db_instance.fullstack_rds.address
-}
-
-output "ecs_cluster_name" {
-  description = "ECS cluster name"
-  value       = aws_ecs_cluster.main.name
-}
-
-output "workspace" {
-  description = "Active Terraform workspace"
-  value       = terraform.workspace
-}

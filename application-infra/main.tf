@@ -657,7 +657,7 @@ resource "aws_lb" "fullstack_alb" {
 
 resource "aws_lb_target_group" "backend" {
   # 🛡️ SAFE PREFIX: Prevents the 32-character AWS naming length crash
-  name_prefix = "b-api-"
+  name_prefix = "b-api"
   port        = var.container_port # Ensure this variable evaluates to 3000!
   protocol    = "HTTP"
   target_type = "ip"
@@ -679,7 +679,7 @@ resource "aws_lb_target_group" "backend" {
 
 resource "aws_lb_target_group" "frontend" {
   # 🛡️ SAFE PREFIX: Prevents the 32-character AWS naming length crash
-  name_prefix = "f-web-"
+  name_prefix = "f-web"
   # 🔄 FIXED PORT: Synchronized to route directly to your frontend's internal listening engine port
   port        = 80
   protocol    = "HTTP"

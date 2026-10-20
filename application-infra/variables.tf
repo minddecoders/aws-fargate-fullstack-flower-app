@@ -45,12 +45,6 @@ variable "private_instance_ami" {
   description = "AMI ID for the private backend host"
   default     = "ami-04df7d76c1b804451"
 }
-
-variable "container_image" {
-  type        = string
-  description = "Docker image for the backend API"
-  nullable    = false
-}
 variable "container_port" {
   description = "Port exposed by the backend API"
   type        = number

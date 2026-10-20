@@ -83,7 +83,6 @@ jobs:
           terraform plan \
             -input=false \
             -no-color \
-            -var="db_password=${{ secrets.RDS_DB_PASSWORD }}" \
             -out=tfplan
 
       - name: "Upload Terraform Plan Artifact"

@@ -60,16 +60,16 @@ jobs:
       - name: "Initialize Terraform Backend"
         run: terraform init -input=false
 
+      # 🔄 REALIGNED: Completely removed 'env: TF_WORKSPACE' wrapper block to avoid CLI locking conflicts!
       - name: "Select Terraform Workspace"
-        env:
-          TF_WORKSPACE: ${{ inputs.environment }}
         run: |
-          echo "Target environment: $TF_WORKSPACE"
+          TARGET_ENV="${{ inputs.environment }}"
+          echo "Target environment selected: $TARGET_ENV"
 
-          if terraform workspace list | sed 's/^[* ]*//' | grep -Fxq "$TF_WORKSPACE"; then
-            terraform workspace select "$TF_WORKSPACE"
+          if terraform workspace list | sed 's/^[* ]*//' | grep -Fxq "$TARGET_ENV"; then
+            terraform workspace select "$TARGET_ENV"
           else
-            terraform workspace new "$TF_WORKSPACE"
+            terraform workspace new "$TARGET_ENV"
           fi
 
           terraform workspace show
@@ -77,13 +77,13 @@ jobs:
       - name: "Validate Terraform Configuration"
         run: terraform validate
 
+      # 🔄 REALIGNED: Replaced env lock with explicit '-var' variables payload for your secure database password!
       - name: "Generate Terraform Plan"
-        env:
-          TF_WORKSPACE: ${{ inputs.environment }}
         run: |
           terraform plan \
             -input=false \
             -no-color \
+            -var="db_password=${{ secrets.RDS_DB_PASSWORD }}" \
             -out=tfplan
 
       - name: "Upload Terraform Plan Artifact"

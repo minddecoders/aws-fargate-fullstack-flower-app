@@ -82,7 +82,10 @@ jobs:
           fi
 
           echo "Verified workspace: $SELECTED_WORKSPACE"
-
+            
+      - name: Review Destruction Plan
+        run: terraform plan -destroy -input=false -no-color
+      
       - name: Destroy Workspace Infrastructure
         run: terraform destroy -input=false -auto-approve
 

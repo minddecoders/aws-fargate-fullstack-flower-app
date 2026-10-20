@@ -29,7 +29,6 @@ try {
 }
 
 // 🩺 HEALTH CHECK INGRESS ROUTE: Used by AWS ALB target groups to verify task viability
-//🎯 SYSTEM SYNCHRONIZED: Dedicated lightweight endpoint for cloud load balancer pings
 app.get('/health', (req, res) => {
     res.status(200).json({ 
         status: 'healthy',
@@ -38,7 +37,6 @@ app.get('/health', (req, res) => {
 });
 
 // 🧪 LIVE DATABASE QUERY PROBE ROUTE: Verifies communication links to RDS MySQL are clear
-//🔄 PATH CORRECTION: Prefixed with /api/ so it clears your ALB network rule filters smoothly
 app.get('/api/db-check', (req, res) => {
     if (!pool) {
         return res.status(500).json({ status: "UNHEALTHY", error: "Database connection pool not initialized." });
@@ -63,8 +61,7 @@ app.get('/api/db-check', (req, res) => {
     });
 });
 
-// 🌸 PRODUCTS API
-//🎯 COMPLIANT ENDPOINT: Perfectly exposes your beautiful flower asset lists
+// 🌸 PRODUCTS API (Expanded to match frontend categories completely)
 app.get('/api/products', (req, res) => {
     res.status(200).json([
         {
@@ -86,6 +83,46 @@ app.get('/api/products', (req, res) => {
             reviews: 94,
             image: 'https://images.unsplash.com/photo-1520763185298-1b434c919102?auto=format&fit=crop&q=80&w=800',
             description: 'Fresh Dutch tulips in soft pastel pinks and cheerful yellows.'
+        },
+        {
+            id: 3,
+            name: 'Ethereal White Orchid',
+            category: 'orchids',
+            price: 78.50,
+            rating: 5.0,
+            reviews: 62,
+            image: 'https://images.unsplash.com/photo-1521334884684-d80222895322?auto=format&fit=crop&q=80&w=800',
+            description: 'Pristine potted Phalaenopsis orchid in a modern ceramic planter.'
+        },
+        {
+            id: 4,
+            name: 'Golden Sunflower & Daisy Charm',
+            category: 'seasonal',
+            price: 52.00,
+            rating: 4.7,
+            reviews: 81,
+            image: 'https://images.unsplash.com/photo-1597848212624-a19eb35e2651?auto=format&fit=crop&q=80&w=800',
+            description: 'Bright sunflowers paired with wild daisies to instantly warm up any room.'
+        },
+        {
+            id: 5,
+            name: 'Lavish Romance Luxury Bundle',
+            category: 'bundles',
+            price: 120.00,
+            rating: 4.9,
+            reviews: 215,
+            image: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=800',
+            description: 'Two dozen premium red roses accompanied by artisan dark chocolate and soy candle.'
+        },
+        {
+            id: 6,
+            name: 'Lavender Dream Hydrangea',
+            category: 'seasonal',
+            price: 58.00,
+            rating: 4.8,
+            reviews: 73,
+            image: 'https://images.unsplash.com/photo-1508784411985-c424d0cfef8f?auto=format&fit=crop&q=80&w=800',
+            description: 'Lush blue and purple hydrangeas designed with delicate baby’s breath.'
         }
     ]);
 });

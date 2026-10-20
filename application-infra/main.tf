@@ -289,7 +289,7 @@ resource "aws_security_group" "public_vm" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["37.111.140.128/32"]
+    cidr_blocks = ["37.111.180.219/32"]
   }
 
   egress {

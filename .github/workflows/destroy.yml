@@ -12,6 +12,10 @@ on:
           - dev
           - staging
           - prod
+      confirm_environment:
+        description: "Type the exact workspace name to confirm destruction"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -20,6 +24,11 @@ permissions:
 env:
   AWS_REGION: eu-west-1
   TF_VERSION: "1.16.2"
+
+# Prevent simultaneous Terraform operations in this repository.
+concurrency:
+  group: terraform-infrastructure
+  cancel-in-progress: false
 
 jobs:
   terraform-destroy:
@@ -33,6 +42,16 @@ jobs:
         working-directory: ./application-infra
 
     steps:
+      - name: Validate Destruction Confirmation
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          CONFIRM_ENVIRONMENT: ${{ inputs.confirm_environment }}
+        run: |
+          if [[ "$CONFIRM_ENVIRONMENT" != "$TARGET_ENVIRONMENT" ]]; then
+            echo "::error::Confirmation must exactly match the selected workspace."
+            exit 1
+          fi
+
       - name: Checkout Repository
         uses: actions/checkout@v4
 
@@ -50,12 +69,20 @@ jobs:
       - name: Initialize Terraform Backend
         run: terraform init -input=false
 
-      - name: Select Target Workspace
+      - name: Select and Verify Workspace
         env:
           TARGET_ENVIRONMENT: ${{ inputs.environment }}
         run: |
           terraform workspace select "$TARGET_ENVIRONMENT"
-          echo "Selected workspace: $(terraform workspace show)"
-      
+          SELECTED_WORKSPACE="$(terraform workspace show)"
+
+          if [[ "$SELECTED_WORKSPACE" != "$TARGET_ENVIRONMENT" ]]; then
+            echo "::error::Selected workspace does not match the requested environment."
+            exit 1
+          fi
+
+          echo "Verified workspace: $SELECTED_WORKSPACE"
+
       - name: Destroy Workspace Infrastructure
         run: terraform destroy -input=false -auto-approve
+

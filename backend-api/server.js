@@ -61,70 +61,32 @@ app.get('/api/db-check', (req, res) => {
     });
 });
 
-// 🌸 PRODUCTS API (Expanded to match frontend categories completely)
+// 🌸 PRODUCTS API: Fetch products directly from Amazon RDS MySQL
 app.get('/api/products', (req, res) => {
-    res.status(200).json([
-        {
-            id: 1,
-            name: 'Velvet Sunset Rose Bouquet',
-            category: 'roses',
-            price: 64.99,
-            rating: 4.9,
-            reviews: 128,
-            image: 'https://images.unsplash.com/photo-1561181286-d3fee7d55364?auto=format&fit=crop&q=80&w=800',
-            description: 'Rich crimson and warm peach roses hand-tied with seeded eucalyptus.'
-        },
-        {
-            id: 2,
-            name: 'Blushing Spring Tulip Medley',
-            category: 'tulips',
-            price: 45.00,
-            rating: 4.8,
-            reviews: 94,
-            image: 'https://images.unsplash.com/photo-1520763185298-1b434c919102?auto=format&fit=crop&q=80&w=800',
-            description: 'Fresh Dutch tulips in soft pastel pinks and cheerful yellows.'
-        },
-        {
-            id: 3,
-            name: 'Ethereal White Orchid',
-            category: 'orchids',
-            price: 78.50,
-            rating: 5.0,
-            reviews: 62,
-            image: 'https://images.unsplash.com/photo-1521334884684-d80222895322?auto=format&fit=crop&q=80&w=800',
-            description: 'Pristine potted Phalaenopsis orchid in a modern ceramic planter.'
-        },
-        {
-            id: 4,
-            name: 'Golden Sunflower & Daisy Charm',
-            category: 'seasonal',
-            price: 52.00,
-            rating: 4.7,
-            reviews: 81,
-            image: 'https://images.unsplash.com/photo-1597848212624-a19eb35e2651?auto=format&fit=crop&q=80&w=800',
-            description: 'Bright sunflowers paired with wild daisies to instantly warm up any room.'
-        },
-        {
-            id: 5,
-            name: 'Lavish Romance Luxury Bundle',
-            category: 'bundles',
-            price: 120.00,
-            rating: 4.9,
-            reviews: 215,
-            image: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=800',
-            description: 'Two dozen premium red roses accompanied by artisan dark chocolate and soy candle.'
-        },
-        {
-            id: 6,
-            name: 'Lavender Dream Hydrangea',
-            category: 'seasonal',
-            price: 58.00,
-            rating: 4.8,
-            reviews: 73,
-            image: 'https://images.unsplash.com/photo-1508784411985-c424d0cfef8f?auto=format&fit=crop&q=80&w=800',
-            description: 'Lush blue and purple hydrangeas designed with delicate baby’s breath.'
+    if (!pool) {
+        return res.status(500).json({
+            status: 'UNHEALTHY',
+            error: 'Database connection pool not initialized.'
+        });
+    }
+
+    const sql = `
+        SELECT id, name, category, price, rating, reviews, image, description
+        FROM products
+        ORDER BY id ASC
+    `;
+
+    pool.query(sql, (error, results) => {
+        if (error) {
+            console.error('Products database query failed:', error.message);
+            return res.status(500).json({
+                status: 'UNHEALTHY',
+                error: 'Failed to retrieve products from the database.'
+            });
         }
-    ]);
+
+        res.status(200).json(results);
+    });
 });
 
 // 🚀 UNLEASH APPLICATION LISTENER
